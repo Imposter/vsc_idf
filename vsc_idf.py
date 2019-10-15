@@ -21,6 +21,7 @@
 
 import sys
 import os
+import signal
 import time
 import json
 import re
@@ -31,8 +32,6 @@ from shutil import rmtree
 from itertools import chain
 from pprint import pprint
 from argparse import ArgumentParser
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
 
 # Utility
 def get_executable(name):
@@ -77,15 +76,6 @@ class SDKConfig:
                 else:
                     output_lines.append("#define {} {}".format(key, value))
             f.writelines(os.linesep.join(output_lines))
-
-class SDKConfigWatchHandler(FileSystemEventHandler):
-    def __init__(self, project_path):
-        self._project_path = project_path
-
-    def on_modified(self, event):
-        if event.src_path == path.join(self._project_path, "sdkconfig"):
-            config = SDKConfig(self._project_path)
-            config.generate_header()
 
 class IDFTools:
     INCLUDED_EXTS = [ ".h", ".hpp" ]
@@ -202,7 +192,7 @@ class IDFTools:
         ], cwd=project_path)
 
     @staticmethod
-    def debug_device(project_path, interface_script, board_script):
+    def debug_device(interface_script, board_script):
         openocd_root = path.join(IDFTools.get_tool_path("openocd-esp32"), "openocd-esp32")
         openocd_bin = path.join(openocd_root, "bin")
         openocd_scripts = path.join(openocd_root, "share", "openocd", "scripts")
@@ -215,7 +205,7 @@ class IDFTools:
 
 def operation_generate(args):
     script_path = path.abspath(__file__)
-    project_path = args.prjpath
+    project_path = path.abspath(args.prjpath)
     project_name = IDFTools.get_project_name(project_path)
     idf_path = env["IDF_PATH"]
     toolchain_root =  path.join(IDFTools.get_tool_path("xtensa-esp32-elf"), "xtensa-esp32-elf")
@@ -235,7 +225,8 @@ def operation_generate(args):
         ],
 
         # ESP-IDF components
-        IDFTools.get_component_include_paths(path.join(idf_path, "components")),
+        [ path.join(idf_path, "components", "**") ],
+        #IDFTools.get_component_include_paths(path.join(idf_path, "components")),
         
         # Project
         [ path.join(project_path, "build", "config") ],
@@ -256,12 +247,12 @@ def operation_generate(args):
                 "browse": { 
                     "path": include_paths, 
                     "limitSymbolsToIncludedHeaders": True, 
-                    "databaseFilename": "${workspaceFolder}/.vscode/browse.vc.db"
+                    "databaseFilename": path.join(project_path, ".vscode", "browse.vc.db")
                 },
-                "defines": [ "DEBUG" ],
+                "defines": [],
                 "intelliSenseMode": "gcc-x86",
                 "compilerPath": path.join(toolchain_bin, get_executable("xtensa-esp32-elf-gcc")),
-                "compileCommands": "${workspaceFolder}/build/compile_commands.json"
+                "compileCommands": path.join(project_path, "build", "compile_commands.json")
             }
         ],
         "version": 4
@@ -276,83 +267,50 @@ def operation_generate(args):
         "version": "2.0.0",
         "tasks": [
             {
-                "label": "ESP-IDF: Build",
-                "type": "shell",
-                "group": "build",
-                "problemMatcher": [],
-                "command": "python",
-                "args": [
-                    script_path,
-                    "--idfpath", idf_path,
-                    "--prjpath", project_path,
-                    "--operation", "build"
-                ]
-            },
-            {
-                "label": "ESP-IDF: Clean",
-                "type": "shell",
-                "group": "build",
-                "problemMatcher": [],
-                "command": "python",
-                "args": [
-                    script_path,
-                    "--idfpath", idf_path,
-                    "--prjpath", project_path,
-                    "--operation", "clean"
-                ]
-            },
-            {
-                "label": "ESP-IDF: Watch 'sdkconfig'",
-                "type": "shell",
-                "group": "build",
-                "problemMatcher": [],
-                "command": "python",
-                "args": [
-                    script_path,
-                    "--idfpath", idf_path,
-                    "--prjpath", project_path,
-                    "--operation", "watch"
-                ]
-            },
-            {
-                "label": "ESP-IDF: Flash Device",
-                "type": "shell",
-                "group": "build",
-                "problemMatcher": [],
-                "command": "python",
-                "args": [
-                    script_path,
-                    "--idfpath", idf_path,
-                    "--prjpath", project_path,
-                    "--operation", "flash"
-                ]
-            },
-            {
-                "label": "ESP-IDF: Monitor",
-                "type": "shell",
-                "group": "build",
-                "problemMatcher": [],
-                "command": "python",
-                "args": [
-                    script_path,
-                    "--idfpath", idf_path,
-                    "--prjpath", project_path,
-                    "--operation", "monitor"
-                ]
-            },
-            {
-                "label": "ESP-IDF: OpenOCD",
-                "type": "shell",
-                "group": "build",
-                "problemMatcher": [],
-                "command": "python",
-                "args": [
-                    script_path,
-                    "--idfpath", idf_path,
-                    "--prjpath", project_path,
-                    "--operation", "debug"
-                ]
-            }
+                **{
+                    "label": label,
+                    "type": "shell",
+                    "group": "build",
+                    "command": "python",
+                    "args": [
+                        script_path,
+                        "--idfpath", idf_path,
+                        "--prjpath", project_path,
+                        "--operations", ",".join(body["operations"])
+                    ]
+                }, 
+                **(body["params"] if "params" in body else {})
+            } for label, body in {
+                "Build": { "operations": [ "build" ] }, 
+                "Clean": { "operations": [ "clean" ] }, 
+                "Monitor": { "operations": [ "monitor" ] },
+                "OpenOCD": { 
+                    "operations": [ "debug" ], 
+                    "params": {
+                        "isBackground": True,
+                        "problemMatcher": [
+                            {
+                                "pattern":[
+                                    {
+                                        "regexp": "^(Info |Warn ):(.*)$",
+                                        "severity": 1,
+                                        "message": 2,
+                                        "file": 1, # compat
+                                        "kind": "file"
+                                    }
+                                ],
+                                "background": {
+                                    "activeOnStart": True,
+                                    "beginsPattern": ".+",
+                                    "endsPattern": "Info : Listening on port \\d+ for gdb connections",
+                                }
+                            }
+                        ]
+                    } 
+                },
+                "Upload": { "operations": [ "build", "flash" ] },
+                "Upload and Monitor": { "operations": [ "build", "flash", "monitor" ] },
+            }.items()
         ]
     }
 
@@ -367,22 +325,25 @@ def operation_generate(args):
             {
                 "type": "gdb",
                 "request": "attach",
-                "name": "ESP-IDF: Attach Debugger",
+                "name": "[GDB] Debug",
                 "executable": path.join(project_path, "build", project_name + ".elf"),
                 "gdbpath": path.join(toolchain_bin, get_executable("xtensa-esp32-elf-gdb")),
                 "target": ":3333",
                 "remote": True,
-                "cwd": "${workspaceRoot}",
+                "cwd": project_path,
                 "valuesFormatting": "parseText",
-                "preLaunchTask": "ESP-IDF: Flash Device"
+                "preLaunchTask": "OpenOCD",
+                "autorun": [
+                    "target remote localhost:3333",
+                    "monitor reset halt",
+                    "set remote hardware-breakpoint-limit 2",
+                    "flushregs",
+                    "hbreak app_main",
+                    "continue"
+                ]
             }
         ]
     }
-
-    # GDB does not output anything if this isn't configured on Windows
-    # Details: https://www.esp32.com/viewtopic.php?f=2&t=12490
-    if os.name == "nt":
-        launch["configurations"][0]["env"] = { "TERM": "xterm" }
 
     # Write file
     with open(ensure_path(path.join(project_path, ".vscode", "launch.json")), "w") as f:
@@ -409,19 +370,6 @@ def operation_generate(args):
 
     print("Done generating scripts and setting up vscode environment")
 
-def operation_watch(args):
-    event_handler = SDKConfigWatchHandler(args.prjpath)
-    observer = Observer()
-    observer.schedule(event_handler, args.prjpath)
-    observer.start()
-    try:
-        print("Watching 'sdkconfig' for changes, press CTRL+C to exit")
-        while True:
-            time.sleep(1)
-    except KeyboardInterrupt:
-        observer.stop()
-    observer.join()
-
 def operation_build(args):
     IDFTools.build_project(args.prjpath)
 
@@ -443,13 +391,13 @@ def operation_debug(args):
     with open(path.join(args.prjpath, ".vscode", "vsc_idf.json"), "r") as f:
         config = json.load(f)
         debug = config["debug"]
-        IDFTools.debug_device(args.prjpath, debug["interface"], debug["board"])
+        IDFTools.debug_device(debug["interface"], debug["board"])
 
 def main():
     parser = ArgumentParser(description="vsc_idf.py - VS Code ESP-IDF Helper", prog=path.basename(sys.argv[0]))
-    parser.add_argument("--operation",
+    parser.add_argument("--operations",
                         type=str,
-                        help="Operation to perform",
+                        help="Operations to perform, multiple can be seperated using commas",
                         required=True)
     parser.add_argument("--prjpath",
                         type=str,
@@ -468,25 +416,27 @@ def main():
     
     # IDF path argument overrides environment variables
     if args.idfpath:
-        env["IDF_PATH"] = args.idfpath
+        env["IDF_PATH"] = path.abspath(args.idfpath)
 
     # Initialize tools
     IDFTools.init()
 
-    if args.operation == "generate":
-        operation_generate(args)
-    elif args.operation == "watch":
-        operation_watch(args)
-    elif args.operation == "build":
-        operation_build(args)
-    elif args.operation == "clean":
-        operation_clean(args)
-    elif args.operation == "flash":
-        operation_flash(args)
-    elif args.operation == "monitor":
-        operation_monitor(args)
-    elif args.operation == "debug":
-        operation_debug(args)
+    # Split operations
+    operations = args.operations.split(",")
+
+    for operation in operations:
+        if operation == "generate":
+            operation_generate(args)
+        elif operation == "build":
+            operation_build(args)
+        elif operation == "clean":
+            operation_clean(args)
+        elif operation == "flash":
+            operation_flash(args)
+        elif operation == "monitor":
+            operation_monitor(args)
+        elif operation == "debug":
+            operation_debug(args)
 
 if __name__ == "__main__":
     main()

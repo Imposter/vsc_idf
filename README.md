@@ -1,20 +1,20 @@
 
 # VS Code ESP-IDF Tools
 
-This script allows for easy setup of ESP-IDF projects in VS Code, with full support for IntelliSense and IDF.
+This script allows for easy setup of ESP-IDF projects in VS Code, with full support for IntelliSense and IDF functionality.
 
 ## Prerequisites
 
-- Python 3.7, obviously
-- Install the required python 3.7 packages using:
-`pip install -r requirements.txt`
+- Python 3.7 or newer
 - Visual Studio Code
 - Microsoft's C/C++ extension for VS Code
 - WebFreak's Native Debug extension for VS Code
 
+## Usage
+
 ### Preparing VS Code environment
 
-Run the following command to generate configuration for VS Code tasks, Microsoft's C/C++ extension, and  WebFreak's Native Debug extension:
+Run the following command to generate configuration for VS Code tasks, Microsoft's C/C++ extension, and WebFreak's Native Debug extension:
 
 > `python vsc_idf.py generate --prjname [project name] --prjpath [path to project]`
 
@@ -22,23 +22,25 @@ You must either run the command in a terminal with ESP-IDF environment variables
 
 This will create a `c_cpp_properties.json`,  `tasks.json` and `launch.json`, along with a `vsc_idf.json` in the `.vscode` directory under the specified project path. The `vsc_idf.json` configuration file will require modification to reflect your setup.
 
-Once the project is opened in VS Code, you will be able to run tasks using the Command Palette. You will also be able debug a device through VS Code by running the `ESP-IDF: OpenOCD` task and attaching GDB to it through VS Code using `ESP-IDF: Attach Debugger` under Debug. More information can be found below.
+It is required to build the project to ensure the IntelliSense cache is built. This behaviour may change in future versions of this script.
 
-Currently it is recommended to build the project using ESP-IDF just once *before* running the generate command to ensure all paths are discovered. This behaviour may change in future versions of this script.
+### Debugging
+
+Once the project is opened in VS Code, you will be able to run tasks using the Command Palette. You will also be able debug a device through VS Code by using `[GDB] Debug` under Debug. The `OpenOCD` task will start and the GDB client will connect to it automatically. Configuration of the debug interface in `.vscode/vsc_idf.json` in the project's directory is required prior to using the debugging features.
 
 ### Available tasks
 
 The generated `tasks.json` provides the following tasks which can be executing the Command Palette in VS Code. They automatically set up the environment so no configuration is required.
 
-- ESP-IDF: Build
+- Build
    > Builds the application, along with all the required components and bootloader using ESP-IDF's idf.py. The output can be found in the project's `build` directory.
-- ESP-IDF: Clean
+- Clean
    > Cleans any output in the project's `build` directory using ESP-IDF's idf.py.
-- ESP-IDF: Watch 'sdkconfig'
-   > Waits for any changes to be made to the `sdkconfig` file and automatically generates a `sdkconfig.h` in the project's `build/config` directory.
-- ESP-IDF: Flash
-   > Flashes a device using ESP-IDF's idf.py. The device's port (`device > port`) must be configured in `vsc_idf.json` in the project's `.vscode` directory.
-- ESP-IDF: Monitor
+- Monitor
    > Open's a serial monitor to communicate with the device using ESP-IDF's idf.py. The baud rate will automatically be determined based on what's specified in `sdkconfig`. The device's port (`device > port`) must be configured in `vsc_idf.json` in the project's `.vscode` directory.
-- ESP-IDF: OpenOCD
+- OpenOCD
    > Launches an OpenOCD instance to connect to the target device. The interface and target board scripts (`debug > interface`, `debug > board`) must be configured in `vsc_idf.json` in the project's `.vscode` directory.
+- Upload
+   > Builds and flashes a device using ESP-IDF's idf.py. The device's port (`device > port`) must be configured in `vsc_idf.json` in the project's `.vscode` directory.
+- Upload and Monitor
+   > Builds and flashes a device using ESP-IDF's idf.py. A monitor is then opened after the device has been flashed. The baud rate will automatically be determined based on what's specified in the `sdkconfig`. The device's port (`device > port`) must be configured in `vsc_idf.json` in the project's `.vscode` directory.
