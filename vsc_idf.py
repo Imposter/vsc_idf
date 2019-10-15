@@ -68,7 +68,7 @@ class SDKConfig:
         if path.exists(config_path):
             rmtree(config_path)
         with open(ensure_path(path.join(config_path, "sdkconfig.h")), "w") as f:
-            output_lines = [ "Automatically generated! Do NOT edit!" ]
+            output_lines = [ "// Automatically generated! Do NOT edit!" ]
             for key, value in self._params.items():
                 if value is 'y':
                     output_lines.append("#define {} 1".format(key))
