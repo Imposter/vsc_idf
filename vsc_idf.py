@@ -389,24 +389,27 @@ def operation_generate(args):
     with open(ensure_path(path.join(project_path, ".vscode", "launch.json")), "w") as f:
         json.dump(launch, f, indent=4)
 
-    # Default configuration
-    config = {
-        "device": {
-            "port": "COM3" if os.name == "nt" else "/dev/ttyUSB0",
-            "baud_rate": sdk_config.param("CONFIG_MONITOR_BAUD")
-        },
-        "debug": {
-            "interface": path.join("ftdi", "esp32_devkitj_v1.cfg"),
-            "board": "esp32-wrover.cfg"
+    # Default configuration, only generated if a configuration isn't already present
+    config_path = ensure_path(path.join(project_path, ".vscode", "vsc_idf.json"))
+    if not path.exists(config_path):
+        config = {
+            "device": {
+                "port": "COM3" if os.name == "nt" else "/dev/ttyUSB0",
+                "baud_rate": sdk_config.param("CONFIG_MONITOR_BAUD")
+            },
+            "debug": {
+                "interface": path.join("ftdi", "esp32_devkitj_v1.cfg"),
+                "board": "esp32-wrover.cfg"
+            }
         }
-    }
 
-    # Write file
-    with open(ensure_path(path.join(project_path, ".vscode", "vsc_idf.json")), "w") as f:
-        json.dump(config, f, indent=4)
+        # Write file
+        with open(ensure_path(path.join(project_path, ".vscode", "vsc_idf.json")), "w") as f:
+            json.dump(config, f, indent=4)
+            
+        print("Make sure to update '.vscode/vsc_idf.json' in the project directory")
 
     print("Done generating scripts and setting up vscode environment")
-    print("Make sure to update '.vscode/vsc_idf.json' in the project directory")
 
 def operation_watch(args):
     event_handler = SDKConfigWatchHandler(args.prjpath)
