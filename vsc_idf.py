@@ -23,6 +23,7 @@ import sys
 import os
 import time
 import json
+import re
 import subprocess as proc
 from glob import glob
 from os import path, walk, environ as env
@@ -58,7 +59,9 @@ class SDKConfig:
                     self._params[split_line[0]] = split_line[1]
 
     def param(self, p):
-        return self._params[p]
+        if p in self._params:
+            return self._params[p]
+        return None
 
     def generate_header(self):
         config_path = path.join(self._project_path, "build", "config")
@@ -129,6 +132,17 @@ class IDFTools:
         return included_dirs
 
     @staticmethod
+    def get_tool_path(tool):
+        with open(path.join(env["IDF_PATH"], "tools", "tools.json"), "r") as f:
+            obj = json.load(f)
+            for t in obj["tools"]:
+                if t["name"] == tool:
+                    for v in t["versions"]:
+                        if "status" in v and v["status"] == "recommended":
+                            return path.join(env["IDF_TOOLS_PATH"], "tools", tool, v["name"])
+        return None
+
+    @staticmethod
     def get_current_toolchain_version():
         with open(path.join(env["IDF_PATH"], "tools", "toolchain_versions.mk"), "r") as f:
             lines = f.readlines()
@@ -141,32 +155,72 @@ class IDFTools:
         return None
 
     @staticmethod
-    def get_toolchain_bin_path():
-        path_split = env["PATH"].split(os.pathsep)
-        for p in path_split:
-            if p.endswith(path.join("xtensa-esp32-elf", "bin")):
-                return p
+    def get_project_name(project_path):
+        with open(path.join(project_path, "CMakeLists.txt"), "r") as f:
+            lines = f.readlines()
+            for line in lines:
+                res = re.search("(.+)\((.+)\)", line)
+                if res:
+                    func = res.group(1)
+                    params = res.group(2)
+                    if func == "project":
+                        return params
         return None
 
     @staticmethod
     def build_project(project_path):
-        proc.run(["python", path.join(env["IDF_PATH"], "tools", "idf.py"), "build"], cwd=project_path)
+        proc.run([
+            "python", 
+            path.join(env["IDF_PATH"], "tools", "idf.py"), 
+            "build"
+        ], cwd=project_path)
     
     @staticmethod
     def clean_project(project_path):
-        proc.run(["python", path.join(env["IDF_PATH"], "tools", "idf.py"), "clean"], cwd=project_path)
+        proc.run([
+            "python", 
+            path.join(env["IDF_PATH"], "tools", "idf.py"), 
+            "clean"
+        ], cwd=project_path)
 
     @staticmethod
     def flash_device(project_path, com_port):
-        proc.run(["python", path.join(env["IDF_PATH"], "tools", "idf.py"), "flash", "-p", com_port], cwd=project_path)
+        proc.run([
+            "python", 
+            path.join(env["IDF_PATH"], "tools", "idf.py"), 
+            "flash", 
+            "-p", com_port
+        ], cwd=project_path)
+
+    @staticmethod
+    def monitor_device(project_path, com_port, baud_rate):
+        proc.run([
+            "python", 
+            path.join(env["IDF_PATH"], "tools", "idf.py"), 
+            "monitor", 
+            "-p", com_port, 
+            "-b", baud_rate
+        ], cwd=project_path)
+
+    @staticmethod
+    def debug_device(project_path, interface_script, board_script):
+        openocd_root = path.join(IDFTools.get_tool_path("openocd-esp32"), "openocd-esp32")
+        openocd_bin = path.join(openocd_root, "bin")
+        openocd_scripts = path.join(openocd_root, "share", "openocd", "scripts")
+        proc.run([
+            path.join(openocd_bin, get_executable("openocd")), 
+            "-s", openocd_scripts,
+            "-f", path.join(openocd_scripts, "interface", interface_script),
+            "-f", path.join(openocd_scripts, "board", board_script)
+        ])
 
 def operation_generate(args):
     script_path = path.abspath(__file__)
-    project_name = args.prjname
     project_path = args.prjpath
+    project_name = IDFTools.get_project_name(project_path)
     idf_path = env["IDF_PATH"]
-    toolchain_bin = IDFTools.get_toolchain_bin_path()
-    toolchain_root = path.normpath(path.join(toolchain_bin, ".."))
+    toolchain_root =  path.join(IDFTools.get_tool_path("xtensa-esp32-elf"), "xtensa-esp32-elf")
+    toolchain_bin = path.join(toolchain_root, "bin")
     toolchain_version = IDFTools.get_current_toolchain_version()
     toolchain_lib = path.join(toolchain_root, "lib", "gcc", "xtensa-esp32-elf", toolchain_version)
    
@@ -190,12 +244,15 @@ def operation_generate(args):
         [ path.join(project_path, "main") ]
     ]))
 
-    # TODO: Move these into independent classes
+    # Generate SDK config
+    sdk_config = SDKConfig(project_path)
+    sdk_config.generate_header()
+
     # Generate c_cpp_properties.json structure
     properties = {
         "configurations": [
             {
-                "name": project_name, 
+                "name": project_name,
                 "includePath": include_paths, 
                 "browse": { 
                     "path": include_paths, 
@@ -224,31 +281,82 @@ def operation_generate(args):
                 "type": "shell",
                 "group": "build",
                 "problemMatcher": [],
-                "command": "python \"{}\" --idfpath \"{}\" --prjpath \"{}\" --operation build".format(path.relpath(script_path, project_path), idf_path, project_path)
+                "command": "python",
+                "args": [
+                    script_path,
+                    "--idfpath", idf_path,
+                    "--prjpath", project_path,
+                    "--operation", "build"
+                ]
             },
             {
                 "label": "ESP-IDF: Clean",
                 "type": "shell",
                 "group": "build",
                 "problemMatcher": [],
-                "command": "python \"{}\" --idfpath \"{}\" --prjpath \"{}\" --operation clean".format(path.relpath(script_path, project_path), idf_path, project_path)
+                "command": "python",
+                "args": [
+                    script_path,
+                    "--idfpath", idf_path,
+                    "--prjpath", project_path,
+                    "--operation", "clean"
+                ]
             },
             {
                 "label": "ESP-IDF: Watch 'sdkconfig'",
                 "type": "shell",
                 "group": "build",
                 "problemMatcher": [],
-                "command": "python \"{}\" --idfpath \"{}\" --prjpath \"{}\" --operation watch".format(path.relpath(script_path, project_path), idf_path, project_path)
+                "command": "python",
+                "args": [
+                    script_path,
+                    "--idfpath", idf_path,
+                    "--prjpath", project_path,
+                    "--operation", "watch"
+                ]
             },
             {
                 "label": "ESP-IDF: Flash Device",
                 "type": "shell",
                 "group": "build",
                 "problemMatcher": [],
-                "command": "python \"{}\" --idfpath \"{}\" --prjpath \"{}\" --operation flash".format(path.relpath(script_path, project_path), idf_path, project_path),
+                "command": "python",
                 "args": [
-                    "--devport",
-                    "DEVICE_PORT"
+                    script_path,
+                    "--idfpath", idf_path,
+                    "--prjpath", project_path,
+                    "--operation", "flash",
+                    "--devport", "DEVICE_PORT"
+                ]
+            },
+            {
+                "label": "ESP-IDF: Monitor",
+                "type": "shell",
+                "group": "build",
+                "problemMatcher": [],
+                "command": "python",
+                "args": [
+                    script_path,
+                    "--idfpath", idf_path,
+                    "--prjpath", project_path,
+                    "--operation", "monitor",
+                    "--devport", "DEVICE_PORT",
+                    "--devbaud", sdk_config.param("CONFIG_MONITOR_BAUD"),
+                ]
+            },
+            {
+                "label": "ESP-IDF: OpenOCD",
+                "type": "shell",
+                "group": "build",
+                "problemMatcher": [],
+                "command": "python",
+                "args": [
+                    script_path,
+                    "--idfpath", idf_path,
+                    "--prjpath", project_path,
+                    "--operation", "debug",
+                    "--ifscript", "ftdi/esp32_devkitj_v1.cfg",
+                    "--bscript", "esp32-wrover.cfg"
                 ]
             }
         ]
@@ -257,12 +365,37 @@ def operation_generate(args):
     # Write file
     with open(ensure_path(path.join(project_path, ".vscode", "tasks.json")), "w") as f:
         json.dump(tasks, f, indent=4)
-
-    # Generate SDK config
-    config = SDKConfig(project_path)
-    config.generate_header()
     
+    # Generate launch.json
+    launch = {
+        "version": "0.2.0",
+        "configurations": [
+            {
+                "type": "gdb",
+                "request": "attach",
+                "name": "ESP-IDF: Attach Debugger",
+                "executable": path.join(project_path, "build", project_name + ".elf"),
+                "gdbpath": path.join(toolchain_bin, get_executable("xtensa-esp32-elf-gdb")),
+                "target": ":3333",
+                "remote": True,
+                "cwd": "${workspaceRoot}",
+                "valuesFormatting": "parseText",
+                "preLaunchTask": "ESP-IDF: Flash Device"
+            }
+        ]
+    }
+
+    # GDB does not output anything if this isn't configured on Windows
+    # Details: https://www.esp32.com/viewtopic.php?f=2&t=12490
+    if os.name == "nt":
+        launch["configurations"][0]["env"] = { "TERM": "xterm" }
+
+    # Write file
+    with open(ensure_path(path.join(project_path, ".vscode", "launch.json")), "w") as f:
+        json.dump(launch, f, indent=4)
+
     print("Done generating scripts and setting up vscode environment")
+    print("Make sure to update tasks.json with the appropriate ports, baud rates, and OpenOCD script paths")
 
 def operation_watch(args):
     event_handler = SDKConfigWatchHandler(args.prjpath)
@@ -286,8 +419,14 @@ def operation_clean(args):
     print("Done cleaning project")
 
 def operation_flash(args):
-    IDFTools.flash_device(args.devport)
+    IDFTools.flash_device(args.prjpath, args.devport)
     print("Done flashing device")
+
+def operation_monitor(args):
+    IDFTools.monitor_device(args.prjpath, args.devport, args.devbaud)
+
+def operation_debug(args):
+    IDFTools.debug_device(args.prjpath, args.ifscript, args.bscript)
 
 def main():
     parser = ArgumentParser(description="vsc_idf.py - VS Code ESP-IDF Helper", prog=path.basename(sys.argv[0]))
@@ -299,13 +438,25 @@ def main():
                         type=str,
                         help="Project path",
                         required=True)
-    parser.add_argument("--prjname",
-                        type=str,
-                        help="Project name",
-                        required=False)
     parser.add_argument("--idfpath",
                         type=str,
                         help="ESP-IDF path",
+                        required=False)
+    parser.add_argument("--devport",
+                        type=str,
+                        help="Device serial port",
+                        required=False)
+    parser.add_argument("--devbaud",
+                        type=int,
+                        help="Device baud rate (for monitor)",
+                        required=False)
+    parser.add_argument("--ifscript",
+                        type=str,
+                        help="Path relative to OpenOCD 'scripts/interface' for interface device",
+                        required=False)
+    parser.add_argument("--bscript",
+                        type=str,
+                        help="Path relative to OpenOCD 'scripts/board' for target board",
                         required=False)
     
     args = parser.parse_args()
@@ -331,6 +482,10 @@ def main():
         operation_clean(args)
     elif args.operation == "flash":
         operation_flash(args)
+    elif args.operation == "monitor":
+        operation_monitor(args)
+    elif args.operation == "debug":
+        operation_debug(args)
 
 if __name__ == "__main__":
     main()
