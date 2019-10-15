@@ -325,8 +325,7 @@ def operation_generate(args):
                     script_path,
                     "--idfpath", idf_path,
                     "--prjpath", project_path,
-                    "--operation", "flash",
-                    "--devport", "DEVICE_PORT"
+                    "--operation", "flash"
                 ]
             },
             {
@@ -339,9 +338,7 @@ def operation_generate(args):
                     script_path,
                     "--idfpath", idf_path,
                     "--prjpath", project_path,
-                    "--operation", "monitor",
-                    "--devport", "DEVICE_PORT",
-                    "--devbaud", sdk_config.param("CONFIG_MONITOR_BAUD"),
+                    "--operation", "monitor"
                 ]
             },
             {
@@ -354,9 +351,7 @@ def operation_generate(args):
                     script_path,
                     "--idfpath", idf_path,
                     "--prjpath", project_path,
-                    "--operation", "debug",
-                    "--ifscript", "ftdi/esp32_devkitj_v1.cfg",
-                    "--bscript", "esp32-wrover.cfg"
+                    "--operation", "debug"
                 ]
             }
         ]
@@ -394,8 +389,24 @@ def operation_generate(args):
     with open(ensure_path(path.join(project_path, ".vscode", "launch.json")), "w") as f:
         json.dump(launch, f, indent=4)
 
+    # Default configuration
+    config = {
+        "device": {
+            "port": "COM3" if os.name == "nt" else "/dev/ttyUSB0",
+            "baud_rate": sdk_config.param("CONFIG_MONITOR_BAUD")
+        },
+        "debug": {
+            "interface": path.join("ftdi", "esp32_devkitj_v1.cfg"),
+            "board": "esp32-wrover.cfg"
+        }
+    }
+
+    # Write file
+    with open(ensure_path(path.join(project_path, ".vscode", "vsc_idf.json")), "w") as f:
+        json.dump(config, f, indent=4)
+
     print("Done generating scripts and setting up vscode environment")
-    print("Make sure to update tasks.json with the appropriate ports, baud rates, and OpenOCD script paths")
+    print("Make sure to update '.vscode/vsc_idf.json' in the project directory")
 
 def operation_watch(args):
     event_handler = SDKConfigWatchHandler(args.prjpath)
@@ -412,21 +423,26 @@ def operation_watch(args):
 
 def operation_build(args):
     IDFTools.build_project(args.prjpath)
-    print("Done building project")
 
 def operation_clean(args):
     IDFTools.clean_project(args.prjpath)
-    print("Done cleaning project")
 
 def operation_flash(args):
-    IDFTools.flash_device(args.prjpath, args.devport)
-    print("Done flashing device")
+    with open(path.join(args.prjpath, ".vscode", "vsc_idf.json"), "r") as f:
+        config = json.load(f)
+        IDFTools.flash_device(args.prjpath, config["device"]["port"])
 
 def operation_monitor(args):
-    IDFTools.monitor_device(args.prjpath, args.devport, args.devbaud)
+    with open(path.join(args.prjpath, ".vscode", "vsc_idf.json"), "r") as f:
+        config = json.load(f)
+        device = config["device"]
+        IDFTools.monitor_device(args.prjpath, device["port"], device["baud_rate"])
 
 def operation_debug(args):
-    IDFTools.debug_device(args.prjpath, args.ifscript, args.bscript)
+    with open(path.join(args.prjpath, ".vscode", "vsc_idf.json"), "r") as f:
+        config = json.load(f)
+        debug = config["debug"]
+        IDFTools.debug_device(args.prjpath, debug["interface"], debug["board"])
 
 def main():
     parser = ArgumentParser(description="vsc_idf.py - VS Code ESP-IDF Helper", prog=path.basename(sys.argv[0]))
@@ -441,22 +457,6 @@ def main():
     parser.add_argument("--idfpath",
                         type=str,
                         help="ESP-IDF path",
-                        required=False)
-    parser.add_argument("--devport",
-                        type=str,
-                        help="Device serial port",
-                        required=False)
-    parser.add_argument("--devbaud",
-                        type=int,
-                        help="Device baud rate (for monitor)",
-                        required=False)
-    parser.add_argument("--ifscript",
-                        type=str,
-                        help="Path relative to OpenOCD 'scripts/interface' for interface device",
-                        required=False)
-    parser.add_argument("--bscript",
-                        type=str,
-                        help="Path relative to OpenOCD 'scripts/board' for target board",
                         required=False)
     
     args = parser.parse_args()
