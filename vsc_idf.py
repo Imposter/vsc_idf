@@ -193,13 +193,12 @@ class IDFTools:
         ], cwd=project_path)
 
     @staticmethod
-    def monitor_device(project_path, com_port, baud_rate):
+    def monitor_device(project_path, com_port):
         proc.run([
             "python", 
             path.join(env["IDF_PATH"], "tools", "idf.py"), 
             "monitor", 
-            "-p", com_port, 
-            "-b", baud_rate
+            "-p", com_port
         ], cwd=project_path)
 
     @staticmethod
@@ -394,8 +393,7 @@ def operation_generate(args):
     if not path.exists(config_path):
         config = {
             "device": {
-                "port": "COM3" if os.name == "nt" else "/dev/ttyUSB0",
-                "baud_rate": sdk_config.param("CONFIG_MONITOR_BAUD")
+                "port": "COM3" if os.name == "nt" else "/dev/ttyUSB0"
             },
             "debug": {
                 "interface": path.join("ftdi", "esp32_devkitj_v1.cfg"),
@@ -439,7 +437,7 @@ def operation_monitor(args):
     with open(path.join(args.prjpath, ".vscode", "vsc_idf.json"), "r") as f:
         config = json.load(f)
         device = config["device"]
-        IDFTools.monitor_device(args.prjpath, device["port"], device["baud_rate"])
+        IDFTools.monitor_device(args.prjpath, device["port"])
 
 def operation_debug(args):
     with open(path.join(args.prjpath, ".vscode", "vsc_idf.json"), "r") as f:

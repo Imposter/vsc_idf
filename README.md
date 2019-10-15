@@ -39,6 +39,6 @@ The generated `tasks.json` provides the following tasks which can be executing t
 - ESP-IDF: Flash
    > Flashes a device using ESP-IDF's idf.py. The device's port (`device > port`) must be configured in `vsc_idf.json` in the project's `.vscode` directory.
 - ESP-IDF: Monitor
-   > Open's a serial monitor to communicate with the device using ESP-IDF's idf.py. The device's port and baud rate (`device > port`, `device > baud_rate`) must be configured in `vsc_idf.json` in the project's `.vscode` directory.
+   > Open's a serial monitor to communicate with the device using ESP-IDF's idf.py. The baud rate will automatically be determined based on what's specified in `sdkconfig`. The device's port (`device > port`) must be configured in `vsc_idf.json` in the project's `.vscode` directory.
 - ESP-IDF: OpenOCD
    > Launches an OpenOCD instance to connect to the target device. The interface and target board scripts (`debug > interface`, `debug > board`) must be configured in `vsc_idf.json` in the project's `.vscode` directory.
