@@ -1,5 +1,5 @@
 # The MIT License (MIT)
-# Copyright (c) 2019 Imposter (github.com/imposter)
+# Copyright (c) 2019 Eyaz Rehman (github.com/imposter)
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -158,6 +158,14 @@ class IDFTools:
         return None
 
     @staticmethod
+    def config_project(project_path):
+        proc.run([
+            "python", 
+            path.join(env["IDF_PATH"], "tools", "idf.py"), 
+            "menuconfig"
+        ], cwd=project_path)
+
+    @staticmethod
     def build_project(project_path):
         proc.run([
             "python", 
@@ -281,6 +289,7 @@ def operation_generate(args):
                 }, 
                 **(body["params"] if "params" in body else {})
             } for label, body in {
+                "Config": { "operations": [ "config" ] },
                 "Build": { "operations": [ "build" ] }, 
                 "Clean": { "operations": [ "clean" ] }, 
                 "Monitor": { "operations": [ "monitor" ] },
@@ -345,6 +354,12 @@ def operation_generate(args):
         ]
     }
 
+    # Windows patch: https://bbs.esp32.com/viewtopic.php?t=12479
+    if os.name == "nt":
+        launch["configurations"][0]["env"] = {
+            "TERM": "xterm"
+        }
+
     # Write file
     with open(ensure_path(path.join(project_path, ".vscode", "launch.json")), "w") as f:
         json.dump(launch, f, indent=4)
@@ -369,6 +384,9 @@ def operation_generate(args):
         print("Make sure to update '.vscode/vsc_idf.json' in the project directory")
 
     print("Done generating scripts and setting up vscode environment")
+
+def operation_config(args):
+    IDFTools.config_project(args.prjpath)
 
 def operation_build(args):
     IDFTools.build_project(args.prjpath)
@@ -427,6 +445,8 @@ def main():
     for operation in operations:
         if operation == "generate":
             operation_generate(args)
+        elif operation == "config":
+            operation_config(args)
         elif operation == "build":
             operation_build(args)
         elif operation == "clean":
