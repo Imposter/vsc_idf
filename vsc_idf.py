@@ -69,9 +69,9 @@ class SDKConfig:
         with open(ensure_path(path.join(config_path, "sdkconfig.h")), "w") as f:
             output_lines = [ "// Automatically generated! Do NOT edit!" ]
             for key, value in self._params.items():
-                if value is 'y':
+                if value == 'y':
                     output_lines.append("#define {} 1".format(key))
-                elif value is 'n' or not value:
+                elif value == 'n' or not value:
                     pass
                 else:
                     output_lines.append("#define {} {}".format(key, value))
@@ -129,7 +129,10 @@ class IDFTools:
                 if t["name"] == tool:
                     for v in t["versions"]:
                         if "status" in v and v["status"] == "recommended":
-                            return path.join(env["IDF_TOOLS_PATH"], "tools", tool, v["name"])
+                            tools_path = path.join(path.expanduser("~"), ".espressif")
+                            if "IDF_TOOLS_PATH" in env:
+                                tools_path = env["IDF_TOOLS_PATH"]
+                            return path.join(tools_path, "tools", tool)
         return None
 
     @staticmethod
@@ -145,17 +148,26 @@ class IDFTools:
         return None
 
     @staticmethod
-    def get_project_name(project_path):
-        with open(path.join(project_path, "CMakeLists.txt"), "r") as f:
+    def get_cmake_list_value(path, key):
+        with open(path, "r") as f:
             lines = f.readlines()
             for line in lines:
-                res = re.search("(.+)\((.+)\)", line)
+                res = re.search("(.+)\(((.|\n)+)\)", line)
                 if res:
                     func = res.group(1)
                     params = res.group(2)
-                    if func == "project":
+                    if func == key:
                         return params
         return None
+
+    @staticmethod
+    def get_component_include_paths_cmake(path):
+        # ...
+        pass
+
+    @staticmethod
+    def get_project_name(project_path):
+        return IDFTools.get_cmake_list_value(path.join(project_path, "CMakeLists.txt"), "project")
 
     @staticmethod
     def config_project(project_path):
@@ -178,7 +190,7 @@ class IDFTools:
         proc.run([
             "python", 
             path.join(env["IDF_PATH"], "tools", "idf.py"), 
-            "clean"
+            "fullclean"
         ], cwd=project_path)
 
     @staticmethod
@@ -238,7 +250,8 @@ def operation_generate(args):
         
         # Project
         [ path.join(project_path, "build", "config") ],
-        IDFTools.get_component_include_paths(path.join(project_path, "components")),
+        [ path.join(project_path, "components", "**") ],
+        #IDFTools.get_component_include_paths(path.join(project_path, "components")),
         [ path.join(project_path, "main") ]
     ]))
 
