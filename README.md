@@ -32,6 +32,8 @@ Once the project is opened in VS Code, you will be able to run tasks using the C
 
 The generated `tasks.json` provides the following tasks which can be executing the Command Palette in VS Code. They automatically set up the environment so no configuration is required.
 
+- Config
+   > Opens ESP-IDF's menuconfig using idf.pu.
 - Build
    > Builds the application, along with all the required components and bootloader using ESP-IDF's idf.py. The output can be found in the project's `build` directory.
 - Clean
